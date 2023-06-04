@@ -4,6 +4,7 @@
 #include <EEPROM.h>
 #include <avr/io.h>
 #include <avr/interrupt.h>
+#include <AccelStepper.h>
 //------------------Main --------------------------------------------
 // int sensorPin = A9;// chân analog kết nối tới cảm biến LM35
 // RTC_DS1307 rtc;
@@ -51,10 +52,27 @@
 
 //   delay(1000); // Wait for one second before reading the time again
 // }
-
-//---------------Timer Interrupt----------------------------
+//--------------Test Robot----------------------------------
 
 #include <TimerOne.h>
+#define step_Y 60
+#define Dir_Y 61
+#define ena_Y 56
+
+#define step_Z 46
+#define Dir_Z 48
+#define ena_Z 62
+
+#define step_X 54
+#define Dir_X 55
+#define ena_X 38
+
+#define end_X 3
+#define end_Y 14
+#define end_Z 18
+AccelStepper Step_X(AccelStepper::DRIVER, step_X, Dir_X);
+AccelStepper Step_Y(AccelStepper::DRIVER, step_Y, Dir_Y);
+AccelStepper Step_Z(AccelStepper::DRIVER, step_Z, Dir_Z);
 #define ledPin 4
 int ledState = LOW;
 int sensorPin = A9;// chân analog kết nối tới cảm biến LM35
@@ -63,9 +81,65 @@ DateTime now; // Get the current time from the RTC module
 DateTime start_time;
 int voltagePin = A11; // analog input pin to read voltage
 int resetCount;
+int tep = 54;
+int dir = 55;
+int ena = 38;
+bool start_job = false;
+void run (byte Ser, int X, int Y, int Z){
+
+  Step_X.moveTo(X);
+  Step_Y.moveTo(Y);
+  Step_Z.moveTo(Z);
+  while (Step_Y.distanceToGo() != 0 || Step_Z.distanceToGo() != 0 || Step_X.distanceToGo() != 0){
+    Step_Y.run();   
+    Step_Z.run();
+    Step_X.run();
+  }
+}
+
+int processSerialData(String serialData) {
+  // Split the serial data by semicolon
+  int separatorIndex = serialData.indexOf(';');
+  if (separatorIndex >= 0) {
+    String command = serialData.substring(0, separatorIndex);
+    String job = serialData.substring(separatorIndex + 1);
+    
+    // Print the command and time values
+    Serial.print("Command: ");
+    Serial.print(command);
+    Serial.print(";");
+    // Serial.print("Job: ");
+    // Serial.print(job);
+    // Serial.print(";");
+    if (command == "S"){
+      start_job = true;
+      return 1;
+    }
+    else if (command == "E"){
+      start_job = false;
+      return 2;
+    }
+    else {
+      // start_job = false;
+      return 3;
+    }
+      
+  }
+  return 0;
+  // Serial.println(start_job);
+  
+
+  // create a DateTime object from the components
+}
+
 void blinkLed(){
+  int time2start;
+  if (Serial.available()) {
+    String serialData = Serial.readStringUntil('\n');
+    time2start = processSerialData(serialData);
+  }
   ledState = !ledState;
-  digitalWrite(LED_BUILTIN, ledState);
+  // digitalWrite(LED_BUILTIN, ledState);
   unsigned long elapsed = (now.unixtime()- start_time.unixtime()); // Calculate the elapsed time
   // Power Supply Status
   int voltageValue = analogRead(voltagePin); // read voltage value
@@ -79,7 +153,6 @@ void blinkLed(){
 
   resetCount = EEPROM.read(0);
   // Print the elapsed time in seconds and milliseconds
-  Serial.print("Timer interrupt: ");
   Serial.print(voltage);
   Serial.print("; ");
   Serial.print(elapsed);
@@ -87,6 +160,7 @@ void blinkLed(){
   Serial.print(temp);
   Serial.print("; ");
   Serial.println(resetCount);
+  
 
 }
 void setup() {
@@ -95,45 +169,230 @@ void setup() {
   Timer1.attachInterrupt(blinkLed);
   while (!Serial) ; // Wait for serial port to connect
 
+
+  resetCount = EEPROM.read(0);
+  resetCount++;
+  EEPROM.write(0, resetCount);
+  pinMode(ena, OUTPUT);
+  pinMode(tep, OUTPUT);
+  pinMode(dir, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(ena, LOW);
+  pinMode(ena_Y, OUTPUT);
+  digitalWrite(ena_Y, LOW);  
+  pinMode(ena_X, OUTPUT);
+  digitalWrite(ena_X, LOW);
+  pinMode(ena_Z, OUTPUT);
+  digitalWrite(ena_Z, LOW);
+  
+
+  Step_X.setMaxSpeed(200);
+  Step_X.setAcceleration(200);
+  Step_Y.setMaxSpeed(100.0);
+  Step_Y.setAcceleration(100.0);
+  Step_Z.setMaxSpeed(100.0);
+  Step_Z.setAcceleration(100.0);
   Wire.begin();
   rtc.begin();
 
   // Set the time when the board is powered on
   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   start_time = rtc.now();
-  resetCount = EEPROM.read(0);
-  resetCount++;
-  EEPROM.write(0, resetCount);
 }
 
 void loop() {
   now = rtc.now();
+  if (start_job){
+    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(dir, LOW);
+    // for(int x = 0; x< 200; x++){
+    //   digitalWrite(tep, HIGH);
+    //   delayMicroseconds(1000);
+    //   digitalWrite(tep, LOW);
+    //   delayMicroseconds(1000);
+    // }
+    //Z: -50 100  X: -100 -20
+    now = rtc.now();
+    delay(200);
+    if (start_job)run(180, -100, 0, -50);
+  now = rtc.now();
+    delay(500);
+    if (start_job)run(180, -20, 0, 100);
+  //   if (start_job)run(180, -348, -171, 142);
+  // now = rtc.now();
+  //   delay(500);
+  //   if (start_job)run(0, -348, -294, 228);
+  // now = rtc.now();
+  //   delay(500);
+  //   if (start_job)run(0, -348, -153, 112);
+  // now = rtc.now();
+  }
+  else {
+    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(dir, HIGH);
+  }
 }
 
 
 
-//---------Waiting for command-----------------------------
+//---------------Timer Interrupt----------------------------
+
+// #include <TimerOne.h>
+// #define ledPin 4
+// int ledState = LOW;
+// int sensorPin = A9;// chân analog kết nối tới cảm biến LM35
 // RTC_DS1307 rtc;
-// bool Job = false;
-// int year, month, day, hour, minute, second;
+// DateTime now; // Get the current time from the RTC module
+// DateTime start_time;
+// int voltagePin = A11; // analog input pin to read voltage
+// int resetCount;
+// int tep = 54;
+// int dir = 55;
+// int ena = 38;
+// bool start_job = false;
+
 // void processSerialData(String serialData) {
 //   // Split the serial data by semicolon
 //   int separatorIndex = serialData.indexOf(';');
 //   if (separatorIndex >= 0) {
 //     String command = serialData.substring(0, separatorIndex);
-//     String timeValue = serialData.substring(separatorIndex + 1);
+//     String job = serialData.substring(separatorIndex + 1);
     
 //     // Print the command and time values
 //     // Serial.print("Command: ");
 //     // Serial.println(command);
-//     // Serial.print("Time: ");
-//     Serial.println(timeValue);
-//     year = atoi(timeValue.substring(0, 5).c_str());
-//     month = atoi(timeValue.substring(6, 8).c_str());
-//     day = atoi(timeValue.substring(9, 11).c_str());
-//     hour = atoi(timeValue.substring(11, 14).c_str());
-//     minute = atoi(timeValue.substring(15, 18).c_str());
-//     second = atoi(timeValue.substring(19, 22).c_str());
+//     // Serial.print("Job: ");
+//     // Serial.println(job);
+//     if (command == "Start"){
+//       start_job = true;
+//     }
+//     else
+//       start_job = false;
+//   }
+//   // Serial.println(start_job);
+  
+
+//   // create a DateTime object from the components
+// }
+
+// void blinkLed(){
+//   if (Serial.available()) {
+//     String serialData = Serial.readStringUntil('\n');
+//     processSerialData(serialData);
+//   }
+//   ledState = !ledState;
+//   // digitalWrite(LED_BUILTIN, ledState);
+//   unsigned long elapsed = (now.unixtime()- start_time.unixtime()); // Calculate the elapsed time
+//   // Power Supply Status
+//   int voltageValue = analogRead(voltagePin); // read voltage value
+//   float voltage = voltageValue * (5.0 / 1023.0); // convert voltage value to voltage
+
+//    //đọc giá trị từ cảm biến LM35
+//   int reading = analogRead(sensorPin);  
+//   //tính ra giá trị hiệu điện thế (đơn vị Volt) từ giá trị cảm biến
+//   float voltage_temp = reading * 5.0 / 1024.0; 
+//   float temp = voltage_temp * 100.0;
+
+//   resetCount = EEPROM.read(0);
+//   // Print the elapsed time in seconds and milliseconds
+//   Serial.print(voltage);
+//   Serial.print("; ");
+//   Serial.print(elapsed);
+//   Serial.print("; ");
+//   Serial.print(temp);
+//   Serial.print("; ");
+//   Serial.println(resetCount);
+
+// }
+// void setup() {
+//   Serial.begin(9600);
+//   Timer1.initialize(1000000); //The led will blink in a half second time interval
+//   Timer1.attachInterrupt(blinkLed);
+//   while (!Serial) ; // Wait for serial port to connect
+
+//   Wire.begin();
+//   rtc.begin();
+
+//   // Set the time when the board is powered on
+//   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+//   start_time = rtc.now();
+//   resetCount = EEPROM.read(0);
+//   resetCount++;
+//   EEPROM.write(0, resetCount);
+//   pinMode(ena, OUTPUT);
+//   pinMode(tep, OUTPUT);
+//   pinMode(dir, OUTPUT);
+//   pinMode(LED_BUILTIN, OUTPUT);
+//   digitalWrite(ena, LOW);
+// }
+
+// void loop() {
+//   now = rtc.now();
+//   if (start_job){
+//     digitalWrite(LED_BUILTIN, HIGH);
+//     digitalWrite(dir, LOW);
+//     for(int x = 0; x< 200; x++){
+//       digitalWrite(tep, HIGH);
+//       delayMicroseconds(1000);
+//       digitalWrite(tep, LOW);
+//       delayMicroseconds(1000);
+//     }
+//     delay(1000);
+//   }
+//   else {
+//     digitalWrite(LED_BUILTIN, LOW);
+//     digitalWrite(dir, HIGH);
+//   }
+// }
+
+
+
+//---------Waiting for command-----------------------------
+// #define step_Y 46
+// #define Dir_Y 48
+// #define ena_Y 62
+// #define step_Z 46
+// #define Dir_Z 48
+// #define ena_Z 62
+// #define end_X 3
+// #define end_Y 14
+// #define end_Z 18
+// AccelStepper Step_Y(AccelStepper::DRIVER, step_Y, Dir_Y, ena_Y);
+// AccelStepper Step_Z(AccelStepper::DRIVER, step_Z, Dir_Z, ena_Z);
+
+// RTC_DS1307 rtc;
+// bool Job = false;
+// int year, month, day, hour, minute, second;
+// DateTime now; // Get the current time from the RTC module
+// DateTime start_time;
+// void run (byte Ser, int X, int Y, int Z){
+
+//   // Step_X.moveTo(X);
+//   Step_Y.moveTo(Y);
+//   Step_Z.moveTo(Z);
+//   while (Step_Y.distanceToGo() != 0 || Step_Z.distanceToGo() != 0){
+//     Step_Y.run();   
+//     Step_Z.run();
+//   }
+// }
+// void processSerialData(String serialData) {
+//   // Split the serial data by semicolon
+//    int separatorIndex = serialData.indexOf(';');
+//   if (separatorIndex >= 0) {
+//     String command = serialData.substring(0, separatorIndex);
+//     // String job = serialData.substring(separatorIndex + 1);
+    
+//     // Print the command and time values
+//     // Serial.print("Command: ");
+//     // Serial.println(command);
+//     // Serial.print("Job: ");
+//     // Serial.println(job);
+//     if (command == "Start"){
+//       Job = true;
+//      start_time = rtc.now();
+//     }
+//     else
+//       Job = false;
 //   }
   
 
@@ -145,82 +404,46 @@ void loop() {
 //   Wire.begin();        // Initialize I2C communication
 //   pinMode(LED_BUILTIN, OUTPUT);
 //   rtc.begin();
-//   rtc.adjust(DateTime(F(__DATE__), F("15:53:00")));
+//   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+//   Step_Y.setMaxSpeed(100.0);
+//   Step_Y.setAcceleration(100.0);
+//   Step_Z.setMaxSpeed(100.0);
+//   Step_Z.setAcceleration(100.0);
 // }
 // void loop() {
+//   now = rtc.now();
 //   if (Serial.available()) {
 //     String serialData = Serial.readStringUntil('\n');
 //     processSerialData(serialData);   
-//     Job = true;
 //   }
-//   if (Job == true){
-//     DateTime startDateTime(year, month, day, hour, minute, second);
-//     Serial.print("Year: ");
-//     Serial.print(year);
-//     Serial.print('/');
-//     Serial.print("Month: ");
-//     Serial.print(month);
-//     Serial.print('/');
-//     Serial.print("Day: ");
-//     Serial.print(day);
-//     Serial.print('/');
-//     Serial.print("H: ");
-//     Serial.print(hour);
-//     Serial.print(':');
-//     Serial.print("M: ");
-//     Serial.print(minute);
-//     Serial.print("S: ");
-//     Serial.print(':');
-//     Serial.println(second);
-//     // Serial.print("Date & Time: ");
-//     // Serial.print(startDateTime.year(), DEC);
-//     // Serial.print('/');
-//     // Serial.print(startDateTime.month(), DEC);
-//     // Serial.print('/');
-//     // Serial.print(startDateTime.day(), DEC);
-//     // Serial.print("  ");
-//     // Serial.print(startDateTime.hour(), DEC);
-//     // Serial.print(':');
-//     // Serial.print(startDateTime.minute(), DEC);
-//     // Serial.print(':');
-//     // Serial.println(startDateTime.second(), DEC);
-//     DateTime now = rtc.now();
-//     // Serial.print("Now.sec: ");
-//     // Serial.print(now.secondstime());
-//     // Serial.print(" -- Start.sec: ");
-//     // Serial.println(startDateTime.secondstime());
-//     if (now.secondstime() >= startDateTime.secondstime()) {
-//       digitalWrite(LED_BUILTIN, HIGH);
-//       Serial.println("It is on scheduled time");
-//       Serial.print("Date & Time: ");
-//       Serial.print(now.year(), DEC);
-//       Serial.print('/');
-//       Serial.print(now.month(), DEC);
-//       Serial.print('/');
-//       Serial.print(now.day(), DEC);
-//       Serial.print("  ");
-//       Serial.print(now.hour(), DEC);
-//       Serial.print(':');
-//       Serial.print(now.minute(), DEC);
-//       Serial.print(':');
-//       Serial.println(now.second(), DEC);
-//     } else {
-//       // Turn off the LED
-//       digitalWrite(LED_BUILTIN, LOW);
-//       Serial.print("NOT-- ");
-//       Serial.print("Date & Time: ");
-//       Serial.print(now.year(), DEC);
-//       Serial.print('/');
-//       Serial.print(now.month(), DEC);
-//       Serial.print('/');
-//       Serial.print(now.day(), DEC);
-//       Serial.print("  ");
-//       Serial.print(now.hour(), DEC);
-//       Serial.print(':');
-//       Serial.print(now.minute(), DEC);
-//       Serial.print(':');
-//       Serial.println(now.second(), DEC);
-//     }
+//   unsigned long elapsed = (now.unixtime()- start_time.unixtime()); // Calculate the elapsed time
+//   Serial.print("Job = "); Serial.print(Job); Serial.print("elapsed = "); Serial.println(elapsed);
+//   if (Job == true && elapsed<=60){
+//     Serial.println("Start");
+//     delay(200);
+//     run(180, -235, -300, 250);
+//     delay(500);
+//     run(180, -348, -171, 142);
+//     delay(500);
+//     run(0, -348, -294, 228);
+//     delay(500);
+//     run(0, -348, -153, 112);
+//     delay(500);
+//     run(0, -450, -153, 112);
+//     delay(500);
+//     run(180, -480, -300, 216);
+//     delay(500);
+//     run(180, -216, -147, 101);
+//     delay(500);
+//     run(0, -56, -289, 229);
+//     delay(500);
+//     run(0, -259, -164, 122);
+//     delay(500);
+//     run(180, -259, -295, 234);
+//     delay(500);
+//   }
+//   else{
+//     Serial.println("Pause");
 //   }
 //   delay(1000);
 // }
